@@ -197,7 +197,7 @@ class BasePlugin:
 	def onHeartbeat(self):
 		Domoticz.Debug("onHeartbeat called ({})".format(self.__runAgain))
 		self.__runAgain -= 1
-		if self.__runAgain == 0:
+		if self.__runAgain <= 0:
 			Domoticz.Debug("update status")
 
 			data = self.__device.status()
