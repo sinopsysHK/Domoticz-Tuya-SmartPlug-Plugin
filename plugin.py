@@ -69,6 +69,7 @@
 import Domoticz
 import pytuya
 import json
+import socket
 
 ########################################################################################
 #
@@ -148,6 +149,8 @@ class BasePlugin:
 
 		#create the pytuya object
 		self.__device = pytuya.OutletDevice(self.__devID, self.__address, self.__localKey)
+		self.__device.connection_timeout = 5
+
 
 	#######################################################################
 	#		
@@ -178,8 +181,24 @@ class BasePlugin:
 			Domoticz.Error("Undefined command: " + Command)
 			return
 		newstatus = (Command == "On")
-		self.__device.set_status(newstatus, int((Unit - (Unit % 10)) / 10))
-		Devices[Unit].Update(nValue = 1 if newstatus else 0, sValue = Command)		
+		retry = 3
+		unitid = int((Unit - (Unit % 10)) / 10)
+		nval = 1 if newstatus else 0
+		while retry > 0:
+			try:
+				self.__device.set_status(newstatus, unitid)
+				Devices[Unit].Update(nValue = nval, sValue = Command)
+				return
+			except socket.timeout:
+				Domoticz.Error(
+					"Plug didn't answer in time (try " + str(3-retry+1) + "/3)"
+					+ (" ...retry" if retry > 0 else "")
+				)
+				retry -= 1
+			except Exception as e:
+				Domoticz.Error("Abort command as an error append: " + str(e))
+				return
+
 
 	#######################################################################
 	#		
@@ -200,15 +219,20 @@ class BasePlugin:
 		if self.__runAgain <= 0:
 			Domoticz.Debug("update status")
 
-			data = self.__device.status()
-			Domoticz.Debug("status is : %r" % data)
+			try:
+				data = self.__device.status()
+				Domoticz.Debug("status is : %r" % data)
 
-			states = data["dps"]
-			if not isinstance(states, list):
-				states = [states]
-				
-			for dps, d in enumerate(states, start=1):
-				self._updateStatus(dps, d)
+				states = data["dps"]
+				if not isinstance(states, list):
+					states = [states]
+
+				for dps, d in enumerate(states, start=1):
+					self._updateStatus(dps, d)
+			except socket.timeout:
+				Domoticz.Error("failed to get status on time")
+			except Exception as e:
+				Domoticz.Error("an error append:" + str(e))
 
 			self.__runAgain = self.__HB_BASE_FREQ
 
